@@ -1,0 +1,1021 @@
+   Link: HaskellWiki (en) (search)
+   Link: EditURI
+   Link: copyright
+   Link: HaskellWiki Atom feed (alternate)
+
+      Personal tools
+
+     * Home
+     * Log in
+
+   _____________________ [ Go ]   [ Search ]
+
+      Views
+
+     * Page
+     * Discussion
+     * View source
+     * History
+
+                   HXT/Conversion of Haskell data from/to XML
+
+  From HaskellWiki
+
+   < HXT
+   Jump to: navigation, search
+
+1 Serializing and deserializing Haskell data to/from XML
+
+   With so called pickler functions and arrows, it becomes rather easy and
+   straightforward to convert native Haskell values to XML and vice versa.
+   The module Text.XML.HXT.Arrow.Pickle and submodules contain a set of
+   picklers (conversion functions) for simple data types and pickler
+   combinators for complex types.
+
+   Contents
+
+     * 1 Serializing and deserializing Haskell data to/from XML
+     * 2 The idea: XML pickler
+     * 3 Example: Processing baseball league data
+
+          * 3.1 The XML data structure
+          * 3.2 The Haskell data model
+          * 3.3 The predefined picklers
+          * 3.4 Constructing the example picklers
+          * 3.5 A simple application
+
+     * 4 2. Example: A toy programming language
+
+          * 4.1 The abstract syntax for the programming language
+          * 4.2 The pickler definitions
+          * 4.3 A simple program as Haskell value
+          * 4.4 The serialized program as XML
+
+     * 5 A few words of advice
+     * 6 More Examples
+     * 7 Reading/writing between XML and Haskell data types without XML
+       picklers
+
+          * 7.1 Serializing to Xml
+          * 7.2 Deserializing from Xml
+
+2 The idea: XML pickler
+
+   For conversion of native Haskell data to and from external representations
+   two functions are necessary: One for generating the external
+   representation and one for reading/parsing the representation. Read and
+   Show often form such a pair of functions.
+
+   A so-called pickler is a value with two such conversion functions, but it
+   needs to keep track of the external representation during encoding and
+   decoding, too. So the simplest form of a pickler converting between a
+   value of type a and a sequence of
+   Char
+   s looks like this:
+
+ type St   = [Char]
+  
+ data PU a = PU { appPickle   :: (a, St) -> St
+                , appUnPickle :: St -> (a, St)
+                }
+
+   In a programming pearl paper [1] Andrew Kennedy has described how to
+   define primitive picklers plus a set of pickler combinators to
+   (de-)serialize from and to (Byte-)Strings.
+
+   The HXT picklers are an adaptation of these pickler combinators. The
+   difference to Kennedys approach is that the external representation is not
+   a list of Chars but a list of XmlTrees. The basic picklers for the
+   primitve types (Int, Bool,...) will convert simple values into XML text
+   nodes, and the picklers for creating XML element and attribute nodes are
+   new:
+
+ data St   = St { attributes :: [XmlTree]
+                , contents   :: [XmlTree]
+                }
+  
+ data PU a = PU { appPickle   :: (a, St) -> St
+                , appUnPickle :: St -> (Maybe a, St)
+                , theSchema   :: Schema
+                }
+
+   In XML there are two places for storing information: The attributes and
+   the element contents. Furthermore, the pickler contains a third component
+   for type information. This enables the derivation of a DTD from a set of
+   picklers, but in the following examples we do not need this component.
+   With the predefined picklers and pickler combinators, we don't have to
+   look very much into these internals. Let's start with an example.
+
+3 Example: Processing baseball league data
+
+  3.1 The XML data structure
+
+   In this first example we are dealing with baseball league data, taken from
+   the so- called XML Bible. The complete source for this example is included
+   in the HXT distribution in directory
+   examples/arrows/AGentleIntroductionToHXT/PicklerExample/. First let's get
+   some idea about the structure of the XML data. The structure is not
+   defined by a DTD or schema, so we have to guess some things. Here is a
+   part of the example XML file:
+
+ <SEASON YEAR="1998">
+   <LEAGUE NAME="National League">
+     <DIVISION NAME="East">
+       <TEAM CITY="Atlanta" NAME="Braves">
+         <PLAYER GIVEN_NAME="Marty" SURNAME="Malloy"
+             POSITION="Second Base" GAMES="11"
+             GAMES_STARTED="8" AT_BATS="28" RUNS="3"
+             HITS="5" DOUBLES="1" TRIPLES="0"
+             HOME_RUNS="1" RBI="1" STEALS="0"
+             CAUGHT_STEALING="0" SACRIFICE_HITS="0"
+             SACRIFICE_FLIES="0" ERRORS="0"
+             WALKS="2" STRUCK_OUT="2" HIT_BY_PITCH="0">
+         </PLAYER>
+         <PLAYER GIVEN_NAME="Ozzie" SURNAME="Guillen"
+             POSITION="Shortstop" GAMES="83"
+             GAMES_STARTED="59" AT_BATS="264" RUNS="35"
+             HITS="73" DOUBLES="15" TRIPLES="1"
+             HOME_RUNS="1" RBI="22" STEALS="1"
+             CAUGHT_STEALING="4" SACRIFICE_HITS="4"
+             SACRIFICE_FLIES="2" ERRORS="6"
+             WALKS="24" STRUCK_OUT="25" HIT_BY_PITCH="1">
+         </PLAYER>
+         <PLAYER GIVEN_NAME="Danny" ... HIT_BY_PITCH="0">
+         </PLAYER>
+         <PLAYER GIVEN_NAME="Gerald" ...>
+         </PLAYER>
+         ...
+       </TEAM>
+       <TEAM CITY="Florida" NAME="Marlins">
+       </TEAM>
+       <TEAM CITY="Montreal" NAME="Expos">
+       </TEAM>
+       <TEAM CITY="New York" NAME="Mets">
+       </TEAM>
+       <TEAM CITY="Philadelphia" NAME="Phillies">
+       </TEAM>
+     </DIVISION>
+     ...
+   </LEAGUE>
+   <LEAGUE NAME="American League">
+     <DIVISION NAME="East">
+     ...
+     </DIVISION>
+     <DIVISION NAME="Central">
+     ...
+     </DIVISION>
+     ...
+   </LEAGUE>
+ </SEASON>
+
+  3.2 The Haskell data model
+
+   Let's first analyze the underlying data model and then define an
+   appropriate set of Haskell data types for the internal representation.
+
+     * The root type is a Season, consisting of a year an a set of Leagues
+     * The Leagues are all identified by a String and consist of a set of
+       Divisions, so it's a Map.
+     * The Divisions are also identified by a String and consist of a list of
+       Teams, so it's again a Map
+     * A Team has three components, a teamName, a city, and a list of Players
+     * A Player has a lot of attributes, for simplicity of the example in the
+       internal model we will not take all fields into account. Just six
+       fields are included, the firstName, the lastName, the position,
+       atBats, hits and era. All others will be ignored.
+
+   So the Haskell data model looks like this:
+
+ import Data.Map
+  
+ data Season = Season
+   { sYear    :: Int
+   , sLeagues :: Leagues
+   } deriving (Show, Eq)
+  
+ type Leagues = Map String Divisions
+  
+ type Divisions = Map String [Team]
+  
+ data Team = Team
+   { teamName :: String
+   , city     :: String
+   , players  :: [Player]
+   } deriving (Show, Eq)
+  
+ data Player = Player
+   { firstName :: String
+   , lastName  :: String
+   , position  :: String
+   , atBats    :: Maybe Int
+   , hits      :: Maybe Int
+   , era       :: Maybe Float
+   } deriving (Show, Eq)
+
+  3.3 The predefined picklers
+
+   HXT contains a class XmlPickler defining a single function xpickle for
+   overloading the xpickle function name:
+
+ class XmlPickler a where
+   xpickle :: PU a
+
+   For simple data types there is an instance for XmlPickler which uses the
+   primitive pickler xpPrim for conversion from and to XML text nodes. This
+   primitive pickler is available for all types supporting Read and Show:
+
+ instance XmlPickler Int where
+   xpickle = xpPrim
+  
+ instance XmlPickler Integer where
+   xpickle = xpPrim
+  
+ ...
+
+   For the composite data type tuples, lists and Maybe there are predefined
+   pickler combinators:
+
+ instance (XmlPickler a, XmlPickler b) => XmlPickler (a,b) where
+   xpickle = xpPair xpickle xpickle
+  
+ -- similar instances for (,,), (,,,), ...
+  
+ instance XmlPickler a => XmlPickler [a] where
+   xpickle = xpList xpickle
+  
+ instance XmlPickler a => XmlPickler (Maybe a) where
+   xpickle = xpOption xpickle
+
+     * xpPair take two picklers and builds up a pickler for a tuple type.
+       There are also pickler combinators for triples, 4- and 5- tuples.
+     * xpList takes a pickler for an element type and gives a list pickler
+     * xpOption takes a pickler and returns a pickler for optional values.
+
+   In addition to those picklers, we need picklers for generating/reading
+   element and attribute nodes:
+
+     * xpElem generates/parses an XML element node
+     * xpAttr generates/parses an attribute node
+
+   Most of the other structured data is pickled/unpickled by converting the
+   data to/from tuples, lists and options. This is done by a wrapper pickler
+   xpWrap.
+
+  3.4 Constructing the example picklers
+
+   For every Haskell type we will define a pickler.
+
+   For the own data types we will declare instances of the XmlPickler class.
+
+ instance XmlPickler Season where
+     xpickle = xpSeason
+  
+ instance XmlPickler Team where
+     xpickle = xpTeam
+  
+ instance XmlPickler Player where
+     xpickle = xpPlayer
+
+   Then the picklers are developed top down starting with xpSeason.
+
+ xpSeason        :: PU Season
+ xpSeason
+     = xpElem "SEASON" $
+       xpWrap ( uncurry Season
+              , \ s -> (sYear s, sLeagues s)) $
+       xpPair (xpAttr "YEAR" xpickle) xpLeagues
+
+   A Season value is mapped onto an element SEASON with xpElem. This
+   constructs/reads the XML SEASON element. The two components of Season are
+   wrapped into a pair with xpWrap. xpWrap needs a pair of functions for a
+   1-1 mapping between Season and (Int, Leagues). The first component of the
+   pair, the year is mapped onto an attribute YEAR. The attribute value is
+   handled with the predefined pickler for Int. The second one, the Leagues
+   are handled by xpLeagues.
+
+ xpLeagues       :: PU Leagues
+ xpLeagues
+     = xpWrap ( fromList
+              , toList ) $
+       xpList $
+       xpElem "LEAGUE" $
+       xpPair (xpAttr "NAME" xpText) xpDivisions
+
+   xpLeagues has to deal with a Map value. This can't done directly, but the
+   Map value is converted to/from a list of pairs with xpWrap and (fromList,
+   toList). Then the xpList is applied for the list of pairs. Each pair will
+   be represented by an LEAGUE element, the name is mapped to an attribute
+   NAME, the divisions are handled by xpDivisions.
+
+   (xpText is used to encode attribute or tag text, but note that you must
+   use xpText0 instead wherever the empty string is a legal value, because
+   xpText doesn't handle the case of unpickling 'nothing' from the XML.)
+
+ xpDivisions     :: PU Divisions
+ xpDivisions
+     = xpWrap ( fromList
+              , toList
+              ) $
+       xpList $
+       xpElem "DIVISION" $
+       xpPair (xpAttr "NAME" xpText) xpickle
+
+   The divisions are pickled by the same pattern as the leagues.
+
+ xpTeam  :: PU Team
+ xpTeam
+     = xpElem "TEAM" $
+       xpWrap ( uncurry3 Team
+              , \ t -> ( teamName t
+                       , city t
+                       , players t
+                       )
+              ) $
+       xpTriple (xpAttr "NAME" xpText)
+                (xpAttr "CITY" xpText)
+                (xpList xpickle)
+
+   With the teams we have to wrap the three components into a 3-tuple with
+   xpWrap and then pickle a triple of two attributes and a list of players.
+
+ xpPlayer        :: PU Player
+ xpPlayer
+     = xpElem "PLAYER" $
+       xpWrap ( \ ((f,l,p,a,h,e)) -> Player f l p a h e
+              , \ t -> (firstName t, lastName t
+                       , position t, atBats t
+                       , hits t, era t
+                       )
+              ) $
+       xp6Tuple (xpAttr           "GIVEN_NAME" xpText  )
+                (xpAttr           "SURNAME"    xpText  )
+                (xpAttr           "POSITION"   xpText  )
+                (xpOption (xpAttr "AT_BATS"    xpickle))
+                (xpOption (xpAttr "HITS"       xpickle))
+                (xpOption (xpAttr "ERA"        xpPrim ))
+
+   The Player pickler looks a bit clumsy, because of the six fields. A Player
+   is mapped to an element PLAYER with 3 mandatory attributes and 3 optional
+   attributes
+
+   Since HXT-9 tuples are supported until 24 components.
+
+   New in this case is the use of xpOption for mapping Maybe values onto
+   optional attributes.
+
+   The other attributes used in the input, are ignored during unpickling the
+   XML, but this is the only place where the pickler is tolerant with wrong
+   XML.
+
+  3.5 A simple application
+
+ import Text.XML.HXT.Core
+  
+ -- ...
+  
+ main    :: IO ()
+ main
+     = do
+       runX ( xunpickleDocument xpSeason
+                                [ withValidate no
+                                , withTrace 1
+                                , withRemoveWS yes
+                                , withPreserveComment no
+                                ] "simple2.xml"
+              >>>
+              processSeason
+              >>>
+              xpickleDocument   xpSeason
+                                [ withIndent yes
+                                ] "new-simple2.xml"
+            )
+       return ()
+  
+ -- the dummy for processing the unpickled data
+  
+ processSeason   :: IOSArrow Season Season
+ processSeason
+     = arrIO ( \ x -> do {print x ; return x})
+
+   This application reads in the complete data used in HXT/Practical/Simple2
+   from file simple2.xml and unpickles it into a Season value. This value is
+   processed (dummy: print out) by processSeason and pickled again into
+   new-simple2.xml
+
+   The unpickled value, when formatted a bit, looks like this
+
+   Season
+       { sYear = 1998
+       , sLeagues = fromList
+         [ ( "American League"
+           , fromList
+             [ ( "Central"
+               , [ Team { teamName = "White Sox"
+                        , city = "Chicago"
+                        , players = []}
+                 , ...
+                 ])
+             , ( "East"
+               , [ Team { teamName = "Orioles"
+                        , city = "Baltimore"
+                        , players = []}
+                 , ...
+                 ])
+             , ( "West"
+               , [ Team { teamName = "Angels"
+                        , city = "Anaheim"
+                        , players = []}
+                 , ...
+                 ])
+             ])
+         , ( "National League"
+           , fromList
+             [ ( "Central"
+               , [ Team { teamName = "Cubs"
+                        , city = "Chicago"
+                        , players = []}
+                 , ...
+                 ])
+             , ( "East"
+               , [ Team { teamName = "Braves"
+                        , city = "Atlanta"
+                        , players =
+                          [ Player { firstName = "Marty"
+                                   , lastName = "Malloy"
+                                   , position = "Second Base"
+                                   , atBats = Just 28
+                                   , hits = Just 5
+                                   , era = Nothing}
+                          , Player { firstName = "Ozzie"
+                                   , lastName = "Guillen"
+                                   , position = "Shortstop"
+                                   , atBats = Just 264
+                                   , hits = Just 73
+                                   , era = Nothing}
+                          , ...
+                          ]}
+                 , ...
+                 ])
+             , ( "West"
+               , [ Team { teamName = "Diamondbacks"
+                        , city = "Arizona"
+                        , players = []}
+                 , ...
+                 ])
+             ])
+         ]
+       }
+
+4 2. Example: A toy programming language
+
+   In this second example we will develop the picklers the other way round.
+   We start with a given data model and derive an XML document structure.
+
+   The complete source of this example is included in the HXT distribution in
+   directory examples/arrows/pickle/
+
+  4.1 The abstract syntax for the programming language
+
+ type Program    = Stmt
+  
+ type StmtList   = [Stmt]
+  
+ data Stmt
+     = Assign  Ident  Expr
+     | Stmts   StmtList
+     | If      Expr  Stmt (Maybe Stmt)
+     | While   Expr  Stmt
+       deriving (Eq, Show)
+  
+ type Ident      = String
+  
+ data Expr
+     = IntConst  Int
+     | BoolConst Bool
+     | Var       Ident
+     | UnExpr    UnOp  Expr
+     | BinExpr   Op    Expr  Expr
+       deriving (Eq, Show)
+  
+ data Op
+     = Add | Sub | Mul | Div | Mod | Eq | Neq
+       deriving (Eq, Ord, Enum, Show)
+  
+ data UnOp
+     = UPlus | UMinus | Neg
+       deriving (Eq, Ord, Read, Show)
+
+   A program is a statement, and four variants of statement are defined,
+   assignments, sequences, branches and loops. The expressions have five
+   variants, constants, identifiers, unary and binary expressions. The
+   operators are realized as enumeration types.
+
+   For developing the picklers, there are two new aspects. This example
+   contains sum data types and it's a recursive structure.
+
+  4.2 The pickler definitions
+
+ xpProgram :: PU Program
+ xpProgram = xpElem "program" $
+             xpAddFixedAttr "xmlns" "program42" $
+             xpickle
+  
+ xpMissingRootElement    :: PU Program
+ xpMissingRootElement    = xpickle
+  
+ instance XmlPickler UnOp where
+     xpickle = xpPrim
+  
+ instance XmlPickler Op where
+     xpickle = xpWrap (toEnum, fromEnum) xpPrim
+  
+ instance XmlPickler Expr where
+     xpickle = xpAlt tag ps
+         where
+         tag (IntConst _    ) = 0
+         tag (BoolConst _   ) = 1
+         tag (Var _         ) = 2
+         tag (UnExpr _ _    ) = 3
+         tag (BinExpr _ _ _ ) = 4
+         ps = [ xpWrap ( IntConst
+                       , \ (IntConst i ) -> i
+                       ) $
+                ( xpElem "int"   $
+                  xpAttr "value" $
+                  xpickle
+                )
+  
+              , xpWrap ( BoolConst
+                       , \ (BoolConst b) -> b
+                       ) $
+                ( xpElem "bool"  $
+                  xpAttr "value" $
+                  xpWrap (toEnum, fromEnum) xpickle
+                )
+  
+              , xpWrap ( Var
+                       , \ (Var n)       -> n
+                       ) $
+                ( xpElem "var"   $
+                  xpAttr "name"  $
+                  xpText
+                )
+  
+              , xpWrap ( uncurry UnExpr
+                       , \ (UnExpr op e) -> (op, e)
+                       ) $
+                ( xpElem "unex" $
+                  xpPair (xpAttr "op" xpickle)
+                          xpickle
+                )
+  
+              , xpWrap ( uncurry3 $ BinExpr
+                       , \ (BinExpr op e1 e2) -> (op, e1, e2)
+                       ) $
+                ( xpElem "binex" $
+                  xpTriple (xpAttr "op" xpickle)
+                            xpickle
+                            xpickle
+                )
+              ]
+  
+ instance XmlPickler Stmt where
+     xpickle = xpAlt tag ps
+         where
+         tag ( Assign _ _ ) = 0
+         tag ( Stmts _ )    = 1
+         tag ( If _ _ _ )   = 2
+         tag ( While _ _ )  = 3
+         ps = [ xpWrap ( uncurry Assign
+                       , \ (Assign n v) -> (n, v)
+                       ) $
+                ( xpElem "assign" $
+                  xpPair (xpAttr "name" xpText)
+                          xpickle
+                )
+              , xpWrap ( Stmts
+                       , \ (Stmts sl) -> sl
+                       ) $
+                ( xpElem "block" $
+                  xpList xpickle
+                )
+              , xpWrap ( uncurry3 If
+                       , \ (If c t e) -> (c, t, e)
+                       ) $
+                ( xpElem "if" $
+                  xpTriple xpickle
+                           xpickle
+                           xpickle
+                )
+              , xpWrap ( uncurry While
+                       , \ (While c b) -> (c, b)
+                       ) $
+                ( xpElem "while" $
+                  xpPair xpickle
+                         xpickle
+                )
+              ]
+
+   The root pickler is xpProgram which wraps the main statement in a program
+   element. The program element is decorated with a fixed attribute, defining
+   a name space declaration, just for demonstrating the use of the
+   xpAddFixedAttr.
+
+   For the operators two variants are shown. The UnOp is converted with
+   read/show (xpPrim), The Op is in XML represented by a number (xpWrap
+   (toEnum, fromEnum)).
+
+   The Expr and Stmt picklers are a bit more interesting. We have to select a
+   pickler for every constructor of the data type. This is done by mapping
+   each variant to a number and then index a list of picklers with this
+   number. For all variants the values are converted with xpWrap into simple
+   values or tuples, and then these values are mapped to XML elements. The
+   simple fields are encoded in attributes, the complex (and recursive) are
+   encoded as child elements.
+
+   The complete pickler definitions consist of about 60 lines of code.
+
+  4.3 A simple program as Haskell value
+
+ p2 :: Program
+ p2 = Stmts
+      [ Assign x (IntConst 6)
+      , Assign y (IntConst 7)
+      , Assign p (IntConst 0)
+      , While
+        ( BinExpr Neq (Var x) (IntConst 0) )
+        ( If ( BinExpr Neq ( BinExpr Mod (Var x) (IntConst 2) ) (IntConst 0) )
+             ( Stmts
+               [ Assign x ( BinExpr Sub (Var x) (IntConst 1) )
+               , Assign p ( BinExpr Add (Var p) (Var y) )
+               ]
+             )
+             ( Just ( Stmts
+                      [ Assign x ( BinExpr Div (Var x) (IntConst 2) )
+                      , Assign y ( BinExpr Mul (Var y) (IntConst 2) )
+                      ]
+                    )
+             )
+        )
+      ]
+     where
+     x = "x"
+     y = "y"
+     p = "p"
+
+   An example program with all variants of statements and expressions.
+
+  4.4 The serialized program as XML
+
+ <program xmlns="program42">
+   <block>
+     <assign name="x">
+       <int value="6"/>
+     </assign>
+     <assign name="y">
+       <int value="7"/>
+     </assign>
+     <assign name="p">
+       <int value="0"/>
+     </assign>
+     <while>
+       <binex op="6">
+         <var name="x"/>
+         <int value="0"/>
+       </binex>
+       <if>
+         <binex op="6">
+           <binex op="4">
+             <var name="x"/>
+             <int value="2"/>
+           </binex>
+           <int value="0"/>
+         </binex>
+         <block>
+           <assign name="x">
+             <binex op="1">
+               <var name="x"/>
+               <int value="1"/>
+             </binex>
+           </assign>
+           <assign name="p">
+             <binex op="0">
+               <var name="p"/>
+               <var name="y"/>
+             </binex>
+           </assign>
+         </block>
+         <block>
+           <assign name="x">
+             <binex op="3">
+               <var name="x"/>
+               <int value="2"/>
+             </binex>
+           </assign>
+           <assign name="y">
+             <binex op="2">
+               <var name="y"/>
+               <int value="2"/>
+             </binex>
+           </assign>
+         </block>
+       </if>
+     </while>
+   </block>
+ </program>
+
+   This document is generated by executing the following piece of code
+
+ storeProgram :: IO ()
+ storeProgram
+   = do
+     runX ( constA p2
+            >>>
+            xpickleDocument xpProgram
+                [ withIndent yes        -- indent XML
+                ] "pickle.xml"
+          )
+     return ()
+
+   It's loaded from a file with
+
+ loadProgram :: IO Program
+ loadProgram
+   = do
+     [p2] <- runX
+             ( xunpickleDocument xpProgram
+                   [ withRemoveWS yes   -- remove redundant whitespace
+                   , withValidate no    -- don't validate source
+                   ] "pickle.xml"
+             )
+     return p2
+
+   The withRemoveWS configuration option is necessary because the XML
+   document was formatted and filled up with redundant whitespace when
+   written.
+
+5 A few words of advice
+
+   These picklers are a powerful tool for de-/serializing from/to XML. Only a
+   few lines of code are needed for serializing as well as for deserializing.
+   But they are absolutely intolerant when dealing with invalid XML. They are
+   intended to read machine generated XML, ideally generated by the same
+   pickler. When unpickling hand written XML or XML generated by foreign
+   tools, please validate the XML before reading, preferably with RelaxNG or
+   XML Schema, because of the more powerful validation schema than DTDs.
+
+   When designing picklers, one must be careful to put enough markup into the
+   XML structure, to read the XML back without the need for a lookahead and
+   without any ambiguities. The simplest case of a not working pickler is a
+   pair of primitve picklers e.g. for some text. In this case the text is
+   written out and concatenated into a single string, when parsing the XML,
+   there will only be a single string and the pickler will fail because of a
+   missing value for the second component. So at least every primitive
+   pickler must be combined with an xpElem or xpAttr.
+
+   It's possible to define various picklers per data type, and picklers can
+   be used one way, just for serializing into XML/HTML. So this approach can
+   also be used to easily generate parts of a HTML document.
+
+   Please do not try to convert a whole large database into a single XML file
+   with this approach. This will run into memory problems when reading the
+   data, because of the DOM approach used in HXT. In the HXT distribution,
+   there is a test case in the examples dir performance, where the pickling
+   and unpickling is done with XML documents containing 2 million elements.
+   This is the limit for a 1G Intel box (tested with ghc 6.8).
+
+   There are two strategies to overcome these limitations. The first is a SAX
+   like approach, reading in simple tags and text elements and not building a
+   tree structure, but writing the data instantly into a database. For this
+   approach the Tagsoup package can be useful. The disadvantage is the
+   programming effort for collecting and converting the data.
+
+   The second and recommended way is, to split the whole bunch of data into
+   smaller pieces, unpickle these and link the resulting documents together
+   by the use of 'hrefs.
+
+6 More Examples
+
+   Exxamples dealing with direct conversion to/from XML without the use of
+   picklers can be found under HXT/Practical.
+
+7 Reading/writing between XML and Haskell data types without XML picklers
+
+   This is an example for reading and writing XML without the use of
+   picklers. It was developed before the picklers were added to HXT. The code
+   shows that it's much more effort to implement a conversion than with the
+   technique described above.
+
+  7.1 Serializing to Xml
+
+   We can create an HXT tree from a single-layer data class as follows:
+
+ import IO
+ import Char
+ import Text.XML.HXT.Arrow
+ import Data.Generics
+  
+ -- our data class we'll convert into xml
+ data Config =
+    Config { username :: String,
+             logNumDays :: Int,
+             oleDbString :: String }
+    deriving (Show, Typeable,Data)
+  
+ -- helper function adapted from http://www.defmacro.org/ramblings/haskell-web.html
+ -- (gshow replaced by gshow')
+ introspectData :: Data a => a -> [(String, String)]
+ introspectData a = zip fields (gmapQ gshow' a)
+     where fields = constrFields $ toConstr a
+  
+ gshow' :: Data a => a -> String
+ gshow' t = fromMaybe (showConstr(toConstr t)) (cast t)
+  
+ -- function to create xml string from single-layer Haskell data type
+ xmlSerialize object = "<" ++ show(toConstr object) ++ ">" ++
+    foldr (\(a,b) x  -> x ++ "<" ++ a ++ ">" ++ b ++ "</" ++ a ++ ">") "" ( introspectData object )
+    ++ "</" ++ show(toConstr object) ++ ">"
+  
+ -- function to create HXT tree arrow from single-layer Haskell data type:
+ createHxtArrow object = runLA( constA ( xmlSerialize object ) >>> xread)
+  
+ -- create a config object to serialize:
+  
+ createConfig = Config { username = "test", logNumDays = 3, oleDbString = "qsdf" }
+  
+ -- test function, using our Config data type
+ testConversion = createHxtArrow( createConfig ) ()
+
+   -- hughperkins
+
+  7.2 Deserializing from Xml
+
+   Here's a solution to deserialize a simple Haskell data type containing
+   Strings and Ints.
+
+   It's not really pretty, but it works.
+
+   Basically, we just convert the incoming xml into gread-compatible format,
+   then use gread :-D
+
+   Currently it works for a simple single-layer Haskell data type containing
+   Ints and Strings. You can add new child data types by adding to the case
+   statement in xmlToGShowFormat.
+
+   If someone has a more elegant solution, please let me know (
+   hughperkins@gmail.com )
+
+ module ParseXml
+    where
+  
+ import IO
+ import Char
+ import List
+ import Maybe
+ import Data.Generics hiding (Unit)
+ import Text.XML.HXT.Arrow hiding (when)
+  
+ data Config = Config{ name :: String, age :: Int }
+ --data Config = Config{ age :: Int }
+    deriving( Data, Show, Typeable, Ord, Eq, Read )
+  
+ createConfig = Config "qsdfqsdf" 3
+ --createConfig = Config 3
+ gshow' :: Data a => a -> String
+ gshow' t = fromMaybe (showConstr(toConstr t)) (cast t)
+  
+ -- helper function from http://www.defmacro.org/ramblings/haskell-web.html
+ introspectData :: Data a => a -> [(String, String)]
+ introspectData a = zip fields (gmapQ gshow' a)
+     where fields = constrFields $ toConstr a
+  
+ -- function to create xml string from single-layer Haskell data type
+ xmlSerialize object = "<" ++ show(toConstr object) ++ ">" ++
+    foldr (\(a,b) x  -> x ++ "<" ++ a ++ ">" ++ b ++ "</" ++ a ++ ">") "" ( introspectData object )
+    ++ "</" ++ show(toConstr object) ++ ">"
+  
+ -- parse xml to HXT tree, and obtain the value of node "fieldname"
+ -- returns a string
+ getValue xml fieldname = listToMaybe resultlist
+     where resultlist = runLA ( constA xml >>> xread >>> deep ( hasName fieldname ) >>> getChildren >>> getText ) []
+  
+ -- parse templateobject to get list of field names
+ -- apply these to xml to get list of values
+ -- return (fieldnames list, value list)
+ xmlToGShowFormat :: Data a => String -> a -> String
+ xmlToGShowFormat xml templateobject =
+    go
+    where mainconstructorname = (showConstr $ toConstr templateobject)
+          fields = constrFields $ toConstr templateobject
+          values = map (getValue xml) fields
+          datatypes = gmapQ (dataTypeOf) templateobject
+          constrs = gmapQ (toConstr) templateobject
+          datatypereps = gmapQ (dataTypeRep . dataTypeOf) templateobject
+          fieldtogshowformat value IntRep = "(" ++ fromJust value ++ ")"
+          fieldtogshowformat value _      = show(fromJust value)
+          formattedfieldlist = zipWith fieldtogshowformat values datatypereps
+          go = "(" ++ mainconstructorname ++ " " ++ unwords formattedfieldlist ++ ")"
+  
+ xmlDeserialize xml templateobject = fst $ head $ gread( xmlToGShowFormat xml templateobject)
+  
+ dotest = xmlDeserialize (xmlSerialize createConfig) createConfig :: Config
+ dotest' = xmlDeserialize ("<Config><age>12</age><name>test name!</name></Config>") createConfig :: Config
+
+   Retrieved from
+   "https://www.haskell.org/haskellwiki/index.php?title=HXT/Conversion_of_Haskell_data_from/to_XML&oldid=59191"
+   Categories:
+
+     * Tools
+     * Tutorials
+     * XML
+
+      Navigation
+
+     * Main page
+     * Recent changes
+     * Random page
+
+      Tools
+
+     * What links here
+     * Related changes
+     * Special pages
+     * Printable version
+     * Permanent link
+
+   Powered by MediaWiki
+
+     * This page was last modified on 5 January 2015, at 18:19.
+     * Content is available under a simple permissive license unless
+       otherwise noted.
+     * Privacy policy
+     * About HaskellWiki
+     * Disclaimers
+
+References
+
+   Visible links
+   . https://www.haskell.org/haskellwiki/opensearch_desc.php
+   . https://www.haskell.org/haskellwiki/api.php?action=rsd
+   . https://www.haskell.org/haskellwiki/HaskellWiki:Copyrights
+   . https://www.haskell.org/haskellwiki/index.php?title=Special:RecentChanges&feed=atom
+   . https://www.haskell.org/haskellwiki/Main_Page
+   . https://www.haskell.org/haskellwiki/index.php?title=Special:UserLogin&returnto=HXT%2FConversion+of+Haskell+data+from%2Fto+XML
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML
+   . https://www.haskell.org/haskellwiki/index.php?title=Talk:HXT/Conversion_of_Haskell_data_from/to_XML&action=edit&redlink=1
+   . https://www.haskell.org/haskellwiki/index.php?title=HXT/Conversion_of_Haskell_data_from/to_XML&action=edit
+   . https://www.haskell.org/haskellwiki/index.php?title=HXT/Conversion_of_Haskell_data_from/to_XML&action=history
+   . HXT
+	https://www.haskell.org/haskellwiki/HXT
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#column-one
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#searchInput
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#Serializing_and_deserializing_Haskell_data_to.2Ffrom_XML
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#The_idea:_XML_pickler
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#Example:_Processing_baseball_league_data
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#The_XML_data_structure
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#The_Haskell_data_model
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#The_predefined_picklers
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#Constructing_the_example_picklers
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#A_simple_application
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#2._Example:_A_toy_programming_language
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#The_abstract_syntax_for_the_programming_language
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#The_pickler_definitions
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#A_simple_program_as_Haskell_value
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#The_serialized_program_as_XML
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#A_few_words_of_advice
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#More_Examples
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#Reading.2Fwriting_between_XML_and_Haskell_data_types_without_XML_picklers
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#Serializing_to_Xml
+   . https://www.haskell.org/haskellwiki/HXT/Conversion_of_Haskell_data_from/to_XML#Deserializing_from_Xml
+   . http://research.microsoft.com/~akenn/fun/picklercombinators.pdf
+   . http://www.ibiblio.org/xml/books/bible/examples/05/5-1.xml
+   . HXT/Practical/Simple2
+	https://www.haskell.org/haskellwiki/HXT/Practical/Simple2
+   . HXT/Practical
+	https://www.haskell.org/haskellwiki/HXT/Practical
+   . https://www.haskell.org/haskellwiki/index.php?title=HXT/Conversion_of_Haskell_data_from/to_XML&oldid=59191
+   . Special:Categories
+	https://www.haskell.org/haskellwiki/Special:Categories
+   . Category:Tools
+	https://www.haskell.org/haskellwiki/Category:Tools
+   . Category:Tutorials
+	https://www.haskell.org/haskellwiki/Category:Tutorials
+   . Category:XML
+	https://www.haskell.org/haskellwiki/Category:XML
+   . https://www.haskell.org/haskellwiki/Main_Page
+   . https://www.haskell.org/haskellwiki/Special:RecentChanges
+   . https://www.haskell.org/haskellwiki/Special:Random
+   . https://www.haskell.org/haskellwiki/Special:WhatLinksHere/HXT/Conversion_of_Haskell_data_from/to_XML
+   . https://www.haskell.org/haskellwiki/Special:RecentChangesLinked/HXT/Conversion_of_Haskell_data_from/to_XML
+   . https://www.haskell.org/haskellwiki/Special:SpecialPages
+   . https://www.haskell.org/haskellwiki/index.php?title=HXT/Conversion_of_Haskell_data_from/to_XML&printable=yes
+   . https://www.haskell.org/haskellwiki/index.php?title=HXT/Conversion_of_Haskell_data_from/to_XML&oldid=59191
+   . https://www.mediawiki.org/
+   . HaskellWiki:Copyrights
+	https://www.haskell.org/haskellwiki/HaskellWiki:Copyrights
+   . HaskellWiki:Privacy policy
+	https://www.haskell.org/haskellwiki/HaskellWiki:Privacy_policy
+   . HaskellWiki:About
+	https://www.haskell.org/haskellwiki/HaskellWiki:About
+   . HaskellWiki:General disclaimer
+	https://www.haskell.org/haskellwiki/HaskellWiki:General_disclaimer

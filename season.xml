@@ -1,0 +1,87 @@
+<?xml version="1.0" standalone="yes"?>
+<SEASON YEAR="1998">
+  <LEAGUE NAME="National League">
+    <DIVISION NAME="East">
+      <TEAM CITY="Atlanta" NAME="Braves">
+        <PLAYER GIVEN_NAME="Marty" SURNAME="Malloy" 
+         POSITION="Second Base" 
+         AT_BATS="28" HITS="5" >
+        </PLAYER>
+        <PLAYER GIVEN_NAME="Ozzie" SURNAME="Guillen" 
+         POSITION="Shortstop" 
+         AT_BATS="264" HITS="73" >
+        </PLAYER>
+      </TEAM>
+      <TEAM CITY="Florida" NAME="Marlins">
+      </TEAM>
+      <TEAM CITY="Montreal" NAME="Expos">
+      </TEAM>
+      <TEAM CITY="New York" NAME="Mets">
+      </TEAM>
+      <TEAM CITY="Philadelphia" NAME="Phillies">
+      </TEAM>
+    </DIVISION>
+    <DIVISION NAME="Central">
+      <TEAM CITY="Chicago" NAME="Cubs">
+      </TEAM>
+      <TEAM CITY="Cincinnati" NAME="Reds">
+      </TEAM>
+      <TEAM CITY="Houston" NAME="Astros">
+      </TEAM>
+      <TEAM CITY="Milwaukee" NAME="Brewers">
+      </TEAM>
+      <TEAM CITY="Pittsburgh" NAME="Pirates">
+      </TEAM>
+      <TEAM CITY="St. Louis" NAME="Cardinals">
+      </TEAM>
+    </DIVISION>
+    <DIVISION NAME="West">
+      <TEAM CITY="Arizona" NAME="Diamondbacks">
+      </TEAM>
+      <TEAM CITY="Colorado" NAME="Rockies">
+      </TEAM>
+      <TEAM CITY="Los Angeles" NAME="Dodgers">
+      </TEAM>
+      <TEAM CITY="San Diego" NAME="Padres">
+      </TEAM>
+      <TEAM CITY="San Francisco" NAME="Giants">
+      </TEAM>
+    </DIVISION>
+  </LEAGUE>
+  <LEAGUE NAME="American League">
+    <DIVISION NAME="East">
+      <TEAM CITY="Baltimore" NAME="Orioles">
+      </TEAM>
+      <TEAM CITY="Boston" NAME="Red Sox">
+      </TEAM>
+      <TEAM CITY="New York" NAME="Yankees">
+      </TEAM>
+      <TEAM CITY="Tampa Bay" NAME="Devil Rays">
+      </TEAM>
+      <TEAM CITY="Toronto" NAME="Blue Jays">
+      </TEAM>
+    </DIVISION>
+    <DIVISION NAME="Central">
+      <TEAM CITY="Chicago" NAME="White Sox">
+      </TEAM>
+      <TEAM CITY="Kansas City" NAME="Royals">
+      </TEAM>
+      <TEAM CITY="Detroit" NAME="Tigers">
+      </TEAM>
+      <TEAM CITY="Cleveland" NAME="Indians">
+      </TEAM>
+      <TEAM CITY="Minnesota" NAME="Twins">
+      </TEAM>
+    </DIVISION>
+    <DIVISION NAME="West">
+      <TEAM CITY="Anaheim" NAME="Angels">
+      </TEAM>
+      <TEAM CITY="Oakland" NAME="Athletics">
+      </TEAM>
+      <TEAM CITY="Seattle" NAME="Mariners">
+      </TEAM>
+      <TEAM CITY="Texas" NAME="Rangers">
+      </TEAM>
+     </DIVISION>
+  </LEAGUE>
+</SEASON>
